@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@theme {
+  --color-parksense-green: #059669;
+  --color-parksense-red: #dc2626;
+  --color-parksense-amber: #d97706;
+  --color-parksense-blue: #2563eb;
+  --color-parksense-gray: #6b7280;
+}

@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SlotStatus {
+  AVAILABLE
+  OCCUPIED
+  UNKNOWN
+  OUT_OF_SERVICE
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  UNKNOWN
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertType {
+  DEVICE_OFFLINE
+  SENSOR_FAILURE
+  INVALID_MEASUREMENT
+  AUTH_FAILURE
+  SYSTEM
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String     @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  role          UserRole   @default(VIEWER)
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  accounts  Account[]
+  sessions  Session[]
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model ParkingLot {
+  id          String   @id @default(cuid())
+  name        String
+  address     String?
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  zones ParkingZone[]
+
+  @@map("parking_lots")
+}
+
+model ParkingZone {
+  id        String   @id @default(cuid())
+  lotId     String
+  name      String
+  code      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lot   ParkingLot    @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  slots ParkingSlot[]
+
+  @@unique([lotId, code])
+  @@map("parking_zones")
+}
+
+model ParkingSlot {
+  id        String     @id @default(cuid())
+  zoneId    String
+  code      String
+  status    SlotStatus @default(AVAILABLE)
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  zone   ParkingZone    @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  sensor Sensor?
+  events ParkingEvent[]
+
+  @@unique([zoneId, code])
+  @@index([zoneId])
+  @@index([status])
+  @@map("parking_slots")
+}
+
+model Device {
+  id                String       @id @default(cuid())
+  deviceIdentifier  String       @unique
+  name              String?
+  location          String?
+  credentialHash    String
+  isActive          Boolean      @default(true)
+  status            DeviceStatus @default(OFFLINE)
+  lastSeenAt        DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  sensors    Sensor[]
+  heartbeats DeviceHeartbeat[]
+
+  @@index([deviceIdentifier])
+  @@map("devices")
+}
+
+model Sensor {
+  id            String   @id @default(cuid())
+  deviceId      String
+  parkingSlotId String   @unique
+  sensorType    String   @default("HC-SR04")
+  thresholdCm   Float    @default(20.0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  device      Device      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  parkingSlot ParkingSlot @relation(fields: [parkingSlotId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@map("sensors")
+}
+
+model ParkingEvent {
+  id             String     @id @default(cuid())
+  parkingSlotId  String
+  previousStatus SlotStatus
+  newStatus      SlotStatus
+  distanceCm     Float?
+  durationSec    Int?
+  timestamp      DateTime   @default(now())
+
+  parkingSlot ParkingSlot @relation(fields: [parkingSlotId], references: [id], onDelete: Cascade)
+
+  @@index([parkingSlotId])
+  @@index([timestamp])
+  @@index([newStatus])
+  @@map("parking_events")
+}
+
+model DeviceHeartbeat {
+  id        String   @id @default(cuid())
+  deviceId  String
+  status    String   @default("ONLINE")
+  timestamp DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([timestamp])
+  @@map("device_heartbeats")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Alert {
+  id         String        @id @default(cuid())
+  type       AlertType
+  severity   AlertSeverity @default(WARNING)
+  title      String
+  message    String
+  entityType String?
+  entityId   String?
+  resolved   Boolean       @default(false)
+  resolvedAt DateTime?
+  createdAt  DateTime      @default(now())
+
+  @@index([type])
+  @@index([resolved])
+  @@index([createdAt])
+  @@map("alerts")
+}
